@@ -102,6 +102,81 @@ void setup() {
   
   ym3812_write(0xc0 + chan, 0x00);  // synthtype + feedback
 
+  create_ratio_table();
+}
+
+struct mult_ratio {
+  float ratio;
+  byte op1;
+  byte op2;
+};
+
+mult_ratio ratios[87];
+bool not_contained(float rat) {
+  bool found = false;
+  byte i = 0;
+  while( i<87 && !found) {
+    if( abs(ratios[i].ratio - rat) < 0.00001 ) {
+      // equal
+      found = true;
+    }
+    i += 1;
+  }
+  return !found;
+}
+
+byte last_added = 0;
+void add_ratio(byte op1, byte op2, float rat) {
+  ratios[last_added].ratio = rat;
+  ratios[last_added].op1 = op1;
+  ratios[last_added].op2 = op2;
+  last_added += 1;
+}
+
+// https://rosettacode.org/wiki/Sorting_algorithms/Bubble_sort#C
+void bubble_sort (struct mult_ratio *a, int n) {
+    byte i, j = n, s = 1;
+    float t;
+    while (s) {
+        s = 0;
+        for (i = 1; i < j; i++) {
+            if (a[i].ratio < a[i - 1].ratio) {
+                t = a[i].ratio;
+                a[i].ratio = a[i - 1].ratio;
+                a[i - 1].ratio = t;
+                s = 1;
+            }
+        }
+        j--;
+    }
+}
+
+void sort_ratios() {
+  bubble_sort(&ratios[0], 87);
+}
+
+void create_ratio_table() {
+  float r[] = { 0.5, 1, 2, 3, 4, 5,6, 7, 8, 9, 10, 12, 15 };
+  float rat;
+
+  // fill list of ratios with place holders
+  for(byte i=0; i<87; i+=1) {
+    ratios[i].ratio = 1.0;
+    ratios[i].op1 = 1;
+    ratios[i].op1 = 1;
+  }
+
+  // add every unique ratio
+  for( byte op1 = 0; op1 < 13; op1 += 1) {
+    for( byte op2 = 0; op2 < 13; op2 += 1) {
+      rat = r[op1]/r[op2];
+      if( not_contained(rat)) {
+        add_ratio(op1, op2, rat);
+      }
+    }
+  }
+
+  sort_ratios();
 }
 
 byte note = 20;
@@ -110,6 +185,7 @@ byte feedback = 1;
 byte mult = 1;
 int knob0, knob1, knob2;
 byte mult2 = 1;
+int ratio;
 
 void loop() {
   //demo_loop();
@@ -125,20 +201,20 @@ void vco_loop() {
   ym3812_write(0xa0, notetbl[note] & 0x00ff);  // least significant byte of f-num
   ym3812_write(0xb0, 0x20 | ((notetbl[note] >> 8) & 0x00FF) ) ;  // f-num, octave, key on
   
-  mult= map(knob1, 0, 1023, 0, 0x0F);
-  ym3812_write(0x20 + op1, 0x20 | mult);
-
-  //modulation = map(knob2, 0, 1023, 0x1F, 0x0);
-  modulation = 0x1D;
+  modulation = map(knob1, 0, 1023, 0x1F, 0x0);
   ym3812_write(0x40 + op1, modulation);
 
-  //feedback = map(knob2, 0, 1023, 1, 7);
-  feedback = 0;
-  ym3812_write(0xc0 + op1, (feedback << 1) );
+  //feedback = map(knob3, 0, 1023, 1, 7);
+  //ym3812_write(0xc0 + op1, (feedback << 1) );
   
-  mult2 = map(knob2, 0, 1023, 0, 0x0F);
-  ym3812_write(0x20 + op2, 0x20 | mult2);
+  //mult2 = map(knob2, 0, 1023, 0, 0x0F);
+  //ym3812_write(0x20 + op2, 0x20 | mult2);
   
+  ratio = map(knob2, 0, 1023, 0, 87);
+  if( ratio > 86) ratio = 86;
+  ym3812_write(0x20 + op1, 0x20 | ratios[ratio].op1); 
+  ym3812_write(0x20 + op2, 0x20 | ratios[ratio].op2); 
+
   //digitalWrite(13, true);
   //delay(50);
   //digitalWrite(13, false);
