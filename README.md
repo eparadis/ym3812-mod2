@@ -11,4 +11,8 @@ A PCB set is forth-coming. The main board has already been designed and tested. 
 - modulation: amplitude of OP1 into OP2
 - multiplier ratio: All possible ratios of frequency multipliers are calculated and sorted and presented in order on a single CV input
 
+### TODO
+- explore various modes of polyphony using the other 8 (!) voices on the chip
+- use I2C to connect a human interface for tweaking more esoteric parameters such as waveforms, feedback, and any sort of polyphony
+- connect a better ADC for doing 1v/o properly
 
