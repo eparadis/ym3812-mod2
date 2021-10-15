@@ -183,7 +183,7 @@ byte note = 20;
 byte modulation = 1;
 byte feedback = 1;
 byte mult = 1;
-int knob0, knob1, knob2;
+int knob0, knob1, knob2, knob3;
 byte mult2 = 1;
 int ratio;
 
@@ -196,6 +196,7 @@ void vco_loop() {
   knob0 = analogRead(A0);
   knob1 = analogRead(A1);
   knob2 = analogRead(A2);
+  knob3 = analogRead(A3);
 
   note = map(knob0, 0, 1023, 0, notenum);
   ym3812_write(0xa0, notetbl[note] & 0x00ff);  // least significant byte of f-num
@@ -204,11 +205,8 @@ void vco_loop() {
   modulation = map(knob1, 0, 1023, 0x1F, 0x0);
   ym3812_write(0x40 + op1, modulation);
 
-  //feedback = map(knob3, 0, 1023, 1, 7);
-  //ym3812_write(0xc0 + op1, (feedback << 1) );
-  
-  //mult2 = map(knob2, 0, 1023, 0, 0x0F);
-  //ym3812_write(0x20 + op2, 0x20 | mult2);
+  feedback = map(knob3, 0, 1023, 1, 7);
+  ym3812_write(0xc0 + op1, (feedback << 1) );
   
   ratio = map(knob2, 0, 1023, 0, 87);
   if( ratio > 86) ratio = 86;
