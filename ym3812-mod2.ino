@@ -8,11 +8,11 @@ SSOLED ssoled;
 
 void setupOLED() {
   oledInit(&ssoled, OLED_128x32, -1, 1, 0, 1, -1, -1, -1, 400000L);
-//  oledSetBackBuffer(&ssoled, ucBackBuffer);
+//oledSetBackBuffer(&ssoled, ucBackBuffer);
 
   oledFill(&ssoled, 0x0, 1);
   oledWriteString(&ssoled,0, 0,0, (char *)"BeepBoop", FONT_STRETCHED, 0, 1);
-  oledWriteString(&ssoled,0, 0,2, (char *)"OLED ok!", FONT_STRETCHED, 0, 1);
+  oledWriteString(&ssoled,0, 0,2, (char *)"have fun", FONT_STRETCHED, 0, 1);
   delay(100);
   oledFill(&ssoled, 0x0, 1);
 
@@ -20,24 +20,27 @@ void setupOLED() {
 }
 
 byte modal_type = 0;
+byte feedback = 1;
+byte wave1 = 0, wave2 = 0;
+char waveforms[][9] = {"sine    ", "halfsine", "abs sine", "clipsine"};
+char fb_label[]   = "val: 0  ";
 void cycle_mode() {
-  modal_type = ( modal_type + 1) % 4;
+  modal_type = ( modal_type + 1) % 3;
   switch( modal_type) {
     case 0:
-      oledWriteString(&ssoled,0, 0,0, (char *)"TBD  ;] ", FONT_STRETCHED, 0, 1);
+      oledWriteString(&ssoled,0, 0,0, (char *)"FEEDBACK", FONT_STRETCHED, 0, 1);
+      oledWriteString(&ssoled,0, 0,2, fb_label, FONT_STRETCHED, 0, 1);
       break;
     case 1:
-      oledWriteString(&ssoled,0, 0,0, (char *)"FEEDBACK", FONT_STRETCHED, 0, 1);
+      oledWriteString(&ssoled,0, 0,0, (char *)"OP1 WAVE", FONT_STRETCHED, 0, 1);
+      oledWriteString(&ssoled,0, 0,2, waveforms[wave1], FONT_STRETCHED, 0, 1);
       break;
     case 2:
-      oledWriteString(&ssoled,0, 0,0, (char *)"WAVEFORM", FONT_STRETCHED, 0, 1);
-      break;
-    case 3:
-      oledWriteString(&ssoled,0, 0,0, (char *)"POLY    ", FONT_STRETCHED, 0, 1);
+      oledWriteString(&ssoled,0, 0,0, (char *)"OP2 WAVE", FONT_STRETCHED, 0, 1);
+      oledWriteString(&ssoled,0, 0,2, waveforms[wave2], FONT_STRETCHED, 0, 1);
       break;
   }
 }
-
 
 static const byte D2 = 2;
 static const byte D3 = 3;
@@ -112,7 +115,7 @@ const uint8_t chan = 0;
 void setup() {
   // button
   pinMode(A0, INPUT_PULLUP); // this analog line is used as a digital input
-  
+
   static const uint8_t output_pins[] = {
     D2, D3, D4, D5, D6, D7, D8, D9,   // D0..D7
     pin_a0, pin_wr, /*pin_cs,*/ pin_ic
@@ -125,7 +128,7 @@ void setup() {
   digitalWrite(pin_ic, LOW);
   delay(10);  // TODO: look up how long you need to hold reset
   digitalWrite(pin_ic, HIGH);
-  
+
   digitalWrite(pin_wr, 1);  // de-assert /WR
 
   delay(100);
@@ -143,7 +146,7 @@ void setup() {
   ym3812_write(0x40 + op2, 0x00);  // ksl / output level  
   ym3812_write(0x20 + op2, 0x01);  // multiplier + vibrato etc
   ym3812_write(0xe0 + op2, 0x00);  // waveform (sine)
-  
+
   ym3812_write(0xc0 + chan, 0x00);  // synthtype + feedback
 
   create_ratio_table();
@@ -226,46 +229,36 @@ void create_ratio_table() {
   sort_ratios();
 }
 
-byte feedback = 1;
-byte waveforms = 0;
 int old_raw_val = 0;
 void modal_knob( int raw_val) {
   // detect if the value has actually changed since we switched modes so that cycling the mode doesn't change things
   if(abs(old_raw_val - raw_val) < 8)
     return;
   old_raw_val = raw_val;
-  
-  char wave_label[] = "A 0  B 0";
-  char fb_label[]   = "val: 0  ";
+
   switch(modal_type) {
     case 0:
-      oledWriteString(&ssoled,0, 0,2, (char *)"        ", FONT_STRETCHED, 0, 1);
-      break; // unused
-    case 1:
       feedback = map(raw_val, 0, 1023, 0, 8);
       ym3812_write(0xc0 + op1, (feedback << 1) );
       fb_label[5] = '0' + feedback;
       oledWriteString(&ssoled,0, 0,2, fb_label, FONT_STRETCHED, 0, 1);
       break;
-    case 2: // waveforms
-      // there are four wave forms for each of the two operators, so 16 combinations
-      waveforms = map(raw_val, 0, 1023, 0, 16);
-      byte wave1, wave2;
-      wave1 = waveforms & 0b00000011;
-      wave2 = (waveforms >> 2);
-      // 0 = sine, 1 = halfsine, 2 = rectified sine, 3 = half cycle rectified sine (?)
+    case 1: // waveform for op1
+      // 0 = sine, 1 = halfsine, 2 = rectified sine, 3 = half cycle rectified sine
+      wave1 = map(raw_val, 0, 1023, 0, 4);
+      wave1 = wave1 & 0b00000011;
       ym3812_write(0xe0 + op1, wave1);
-      ym3812_write(0xe0 + op2, wave2);
-      wave_label[2] = '0' + wave1;
-      wave_label[7] = '0' + wave2;
-      oledWriteString(&ssoled,0, 0,2, wave_label, FONT_STRETCHED, 0, 1);
+      oledWriteString(&ssoled,0, 0,2, waveforms[wave1], FONT_STRETCHED, 0, 1);
       break;
-    case 3: // polyphonic stuff
-      oledWriteString(&ssoled,0, 0,2, (char *)"nope    ", FONT_STRETCHED, 0, 1);
+    case 2: // waveform for op2
+      // 0 = sine, 1 = halfsine, 2 = rectified sine, 3 = half cycle rectified sine
+      wave2 = map(raw_val, 0, 1023, 0, 4);
+      wave2 = wave2 & 0b00000011;
+      ym3812_write(0xe0 + op2, wave2);
+      oledWriteString(&ssoled,0, 0,2, waveforms[wave2], FONT_STRETCHED, 0, 1);
       break;
   }
 }
-
 
 byte note = 20;
 byte modulation = 1;
@@ -289,12 +282,12 @@ void vco_loop() {
   note = map(knob0, 0, 1023, 0, notenum);
   ym3812_write(0xa0, notetbl[note] & 0x00ff);  // least significant byte of f-num
   ym3812_write(0xb0, 0x20 | ((notetbl[note] >> 8) & 0x00FF) ) ;  // f-num, octave, key on
-  
+
   modulation = map(knob1, 0, 1023, 0x1F, 0x0);
   ym3812_write(0x40 + op1, modulation);
 
   modal_knob(knob3);
-  
+
   ratio = map(knob2, 0, 1023, 0, 87);
   if( ratio > 86) ratio = 86;
   ym3812_write(0x20 + op1, 0x20 | ratios[ratio].op1); 
@@ -310,24 +303,3 @@ void vco_loop() {
     }
   }
 }
-
-//void demo_loop() {
-//  // from http://www.shipbrook.net/jeff/sb.html
-//                            // Reg Val
-//  ym3812_write(0x20, 0x01); // 20  01  Set the modulator's multiple to 1
-//  ym3812_write(0x40, 0x10); // 40  10  Set the modulator's level to about 40 dB
-//  ym3812_write(0x60, 0xF0); // 60  F0  Modulator attack: quick; decay: long
-//  ym3812_write(0x80, 0x77); // 80  77  Modulator sustain: medium; release: medium
-//  ym3812_write(0xa0, 0x98); // A0  98  Set voice frequency's LSB (it'll be a D#)
-//  ym3812_write(0x23, 0x01); // 23  01  Set the carrier's multiple to 1
-//  ym3812_write(0x43, 0x00); // 43  00  Set the carrier to maximum volume (about 47 dB)
-//  ym3812_write(0x63, 0xF0); // 63  F0  Carrier attack: quick; decay: long
-//  ym3812_write(0x83, 0x77); // 83  77  Carrier sustain: medium; release: medium
-//  ym3812_write(0xb0, 0x31); // B0  31  Turn the voice on; set the octave and freq MSB
-//  digitalWrite(13, true);
-//  delay(200);
-//  
-//  ym3812_write(0xb0, 0x11);  // To turn the voice off, set register B0h to 11h
-//  digitalWrite(13, false);
-//  delay(200);
-//}
