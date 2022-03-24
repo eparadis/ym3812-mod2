@@ -24,19 +24,18 @@ void cycle_mode() {
   modal_type = ( modal_type + 1) % 4;
   switch( modal_type) {
     case 0:
-      oledWriteString(&ssoled,0, 0,0, (char *)"MODE 0  ", FONT_STRETCHED, 0, 1);
+      oledWriteString(&ssoled,0, 0,0, (char *)"TBD  ;] ", FONT_STRETCHED, 0, 1);
       break;
     case 1:
       oledWriteString(&ssoled,0, 0,0, (char *)"FEEDBACK", FONT_STRETCHED, 0, 1);
       break;
     case 2:
-      oledWriteString(&ssoled,0, 0,0, (char *)"MODE 2  ", FONT_STRETCHED, 0, 1);
+      oledWriteString(&ssoled,0, 0,0, (char *)"WAVEFORM", FONT_STRETCHED, 0, 1);
       break;
     case 3:
-      oledWriteString(&ssoled,0, 0,0, (char *)"MODE 3  ", FONT_STRETCHED, 0, 1);
+      oledWriteString(&ssoled,0, 0,0, (char *)"POLY    ", FONT_STRETCHED, 0, 1);
       break;
   }
-
 }
 
 
@@ -131,11 +130,13 @@ void setup() {
 
   delay(100);
 
+  ym3812_write(0x01, 0x20);  // test off, wave select enable(!)
+
   ym3812_write(0x60 + op1, 0xf0);  // ad. decay must be 'long' (0x0) for vco mode
   ym3812_write(0x80 + op1, 0xFF);  // sr
   ym3812_write(0x40 + op1, 0x10);  // ksl / output level
   ym3812_write(0x20 + op1, 0x01);  // multiplier, vibrato, sustain 0x20
-  ym3812_write(0xe0 + op1, 0x02);  // waveform (half sine)
+  ym3812_write(0xe0 + op1, 0x00);  // waveform (sine)
 
   ym3812_write(0x60 + op2, 0xf0);  // ad. decay must be 'long' (0x0) for vco mode
   ym3812_write(0x80 + op2, 0xFF);  // sr
@@ -226,18 +227,41 @@ void create_ratio_table() {
 }
 
 byte feedback = 1;
+byte waveforms = 0;
+int old_raw_val = 0;
 void modal_knob( int raw_val) {
-
+  // detect if the value has actually changed since we switched modes so that cycling the mode doesn't change things
+  if(abs(old_raw_val - raw_val) < 8)
+    return;
+  old_raw_val = raw_val;
+  
+  char wave_label[] = "A 0  B 0";
+  char fb_label[]   = "val: 0  ";
   switch(modal_type) {
     case 0:
-      break;
+      oledWriteString(&ssoled,0, 0,2, (char *)"        ", FONT_STRETCHED, 0, 1);
+      break; // unused
     case 1:
-      feedback = map(raw_val, 0, 1023, 1, 7);
+      feedback = map(raw_val, 0, 1023, 0, 8);
       ym3812_write(0xc0 + op1, (feedback << 1) );
+      fb_label[5] = '0' + feedback;
+      oledWriteString(&ssoled,0, 0,2, fb_label, FONT_STRETCHED, 0, 1);
       break;
-    case 2:
+    case 2: // waveforms
+      // there are four wave forms for each of the two operators, so 16 combinations
+      waveforms = map(raw_val, 0, 1023, 0, 16);
+      byte wave1, wave2;
+      wave1 = waveforms & 0b00000011;
+      wave2 = (waveforms >> 2);
+      // 0 = sine, 1 = halfsine, 2 = rectified sine, 3 = half cycle rectified sine (?)
+      ym3812_write(0xe0 + op1, wave1);
+      ym3812_write(0xe0 + op2, wave2);
+      wave_label[2] = '0' + wave1;
+      wave_label[7] = '0' + wave2;
+      oledWriteString(&ssoled,0, 0,2, wave_label, FONT_STRETCHED, 0, 1);
       break;
-    case 3:
+    case 3: // polyphonic stuff
+      oledWriteString(&ssoled,0, 0,2, (char *)"nope    ", FONT_STRETCHED, 0, 1);
       break;
   }
 }
