@@ -1,5 +1,45 @@
 // largely from https://github.com/a1k0n/opl2/blob/master/arduino/ym3812/ym3812.ino
 
+// see https://github.com/bitbank2/ss_oled/blob/master/src/ss_oled.h
+#include <ss_oled.h>
+
+SSOLED ssoled;
+//static uint8_t ucBackBuffer[1024]; // not enough RAM as of yet
+
+void setupOLED() {
+  oledInit(&ssoled, OLED_128x32, -1, 1, 0, 1, -1, -1, -1, 400000L);
+//  oledSetBackBuffer(&ssoled, ucBackBuffer);
+
+  oledFill(&ssoled, 0x0, 1);
+  oledWriteString(&ssoled,0, 0,0, (char *)"BeepBoop", FONT_STRETCHED, 0, 1);
+  oledWriteString(&ssoled,0, 0,2, (char *)"OLED ok!", FONT_STRETCHED, 0, 1);
+  delay(100);
+  oledFill(&ssoled, 0x0, 1);
+
+  // see https://github.com/bitbank2/ss_oled/blob/01fb9a53388002bbb653c7c05d8e80ca413aa306/src/ss_oled.h#L137 for write string usage
+}
+
+byte modal_type = 0;
+void cycle_mode() {
+  modal_type = ( modal_type + 1) % 4;
+  switch( modal_type) {
+    case 0:
+      oledWriteString(&ssoled,0, 0,0, (char *)"MODE 0  ", FONT_STRETCHED, 0, 1);
+      break;
+    case 1:
+      oledWriteString(&ssoled,0, 0,0, (char *)"FEEDBACK", FONT_STRETCHED, 0, 1);
+      break;
+    case 2:
+      oledWriteString(&ssoled,0, 0,0, (char *)"MODE 2  ", FONT_STRETCHED, 0, 1);
+      break;
+    case 3:
+      oledWriteString(&ssoled,0, 0,0, (char *)"MODE 3  ", FONT_STRETCHED, 0, 1);
+      break;
+  }
+
+}
+
+
 static const byte D2 = 2;
 static const byte D3 = 3;
 static const byte D4 = 4;
@@ -71,6 +111,9 @@ const uint8_t op2 = 3;
 const uint8_t chan = 0;
 
 void setup() {
+  // button
+  pinMode(A0, INPUT_PULLUP); // this analog line is used as a digital input
+  
   static const uint8_t output_pins[] = {
     D2, D3, D4, D5, D6, D7, D8, D9,   // D0..D7
     pin_a0, pin_wr, /*pin_cs,*/ pin_ic
@@ -103,6 +146,9 @@ void setup() {
   ym3812_write(0xc0 + chan, 0x00);  // synthtype + feedback
 
   create_ratio_table();
+
+  setupOLED();
+  cycle_mode();
 }
 
 struct mult_ratio {
@@ -179,13 +225,31 @@ void create_ratio_table() {
   sort_ratios();
 }
 
+byte feedback = 1;
+void modal_knob( int raw_val) {
+
+  switch(modal_type) {
+    case 0:
+      break;
+    case 1:
+      feedback = map(raw_val, 0, 1023, 1, 7);
+      ym3812_write(0xc0 + op1, (feedback << 1) );
+      break;
+    case 2:
+      break;
+    case 3:
+      break;
+  }
+}
+
+
 byte note = 20;
 byte modulation = 1;
-byte feedback = 1;
 byte mult = 1;
 int knob0, knob1, knob2, knob3;
 byte mult2 = 1;
 int ratio;
+bool waiting_for_button_release = false;
 
 void loop() {
   //demo_loop();
@@ -193,7 +257,7 @@ void loop() {
 }
 
 void vco_loop() {
-  knob0 = analogRead(A0);
+  knob0 = analogRead(A7);
   knob1 = analogRead(A1);
   knob2 = analogRead(A2);
   knob3 = analogRead(A3);
@@ -205,36 +269,41 @@ void vco_loop() {
   modulation = map(knob1, 0, 1023, 0x1F, 0x0);
   ym3812_write(0x40 + op1, modulation);
 
-  feedback = map(knob3, 0, 1023, 1, 7);
-  ym3812_write(0xc0 + op1, (feedback << 1) );
+  modal_knob(knob3);
   
   ratio = map(knob2, 0, 1023, 0, 87);
   if( ratio > 86) ratio = 86;
   ym3812_write(0x20 + op1, 0x20 | ratios[ratio].op1); 
   ym3812_write(0x20 + op2, 0x20 | ratios[ratio].op2); 
 
-  //digitalWrite(13, true);
-  //delay(50);
-  //digitalWrite(13, false);
+  if( !digitalRead(A0)) {
+    waiting_for_button_release = true;
+  } else {
+    // A0 is low
+    if( waiting_for_button_release) {
+      waiting_for_button_release = false;
+      cycle_mode();
+    }
+  }
 }
 
-void demo_loop() {
-  // from http://www.shipbrook.net/jeff/sb.html
-                            // Reg Val
-  ym3812_write(0x20, 0x01); // 20  01  Set the modulator's multiple to 1
-  ym3812_write(0x40, 0x10); // 40  10  Set the modulator's level to about 40 dB
-  ym3812_write(0x60, 0xF0); // 60  F0  Modulator attack: quick; decay: long
-  ym3812_write(0x80, 0x77); // 80  77  Modulator sustain: medium; release: medium
-  ym3812_write(0xa0, 0x98); // A0  98  Set voice frequency's LSB (it'll be a D#)
-  ym3812_write(0x23, 0x01); // 23  01  Set the carrier's multiple to 1
-  ym3812_write(0x43, 0x00); // 43  00  Set the carrier to maximum volume (about 47 dB)
-  ym3812_write(0x63, 0xF0); // 63  F0  Carrier attack: quick; decay: long
-  ym3812_write(0x83, 0x77); // 83  77  Carrier sustain: medium; release: medium
-  ym3812_write(0xb0, 0x31); // B0  31  Turn the voice on; set the octave and freq MSB
-  digitalWrite(13, true);
-  delay(200);
-  
-  ym3812_write(0xb0, 0x11);  // To turn the voice off, set register B0h to 11h
-  digitalWrite(13, false);
-  delay(200);
-}
+//void demo_loop() {
+//  // from http://www.shipbrook.net/jeff/sb.html
+//                            // Reg Val
+//  ym3812_write(0x20, 0x01); // 20  01  Set the modulator's multiple to 1
+//  ym3812_write(0x40, 0x10); // 40  10  Set the modulator's level to about 40 dB
+//  ym3812_write(0x60, 0xF0); // 60  F0  Modulator attack: quick; decay: long
+//  ym3812_write(0x80, 0x77); // 80  77  Modulator sustain: medium; release: medium
+//  ym3812_write(0xa0, 0x98); // A0  98  Set voice frequency's LSB (it'll be a D#)
+//  ym3812_write(0x23, 0x01); // 23  01  Set the carrier's multiple to 1
+//  ym3812_write(0x43, 0x00); // 43  00  Set the carrier to maximum volume (about 47 dB)
+//  ym3812_write(0x63, 0xF0); // 63  F0  Carrier attack: quick; decay: long
+//  ym3812_write(0x83, 0x77); // 83  77  Carrier sustain: medium; release: medium
+//  ym3812_write(0xb0, 0x31); // B0  31  Turn the voice on; set the octave and freq MSB
+//  digitalWrite(13, true);
+//  delay(200);
+//  
+//  ym3812_write(0xb0, 0x11);  // To turn the voice off, set register B0h to 11h
+//  digitalWrite(13, false);
+//  delay(200);
+//}
