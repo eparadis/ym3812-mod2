@@ -13,7 +13,7 @@ void setupOLED() {
   oledFill(&ssoled, 0x0, 1);
   oledWriteString(&ssoled,0, 0,0, (char *)"BeepBoop", FONT_STRETCHED, 0, 1);
   oledWriteString(&ssoled,0, 0,2, (char *)"have fun", FONT_STRETCHED, 0, 1);
-  delay(100);
+  delay(400);
   oledFill(&ssoled, 0x0, 1);
 
   // see https://github.com/bitbank2/ss_oled/blob/01fb9a53388002bbb653c7c05d8e80ca413aa306/src/ss_oled.h#L137 for write string usage
@@ -42,25 +42,20 @@ void cycle_mode() {
   }
 }
 
-static const byte D2 = 2;
-static const byte D3 = 3;
-static const byte D4 = 4;
-static const byte D5 = 5;
-static const byte D6 = 6;
-static const byte D7 = 7;
-static const byte D8 = 8;
-static const byte D9 = 9;
-static const byte D10 = 10;
-static const byte D11 = 11;
-static const byte D12 = 12;
-
 // bus pins for programming YM3812
-static const int pin_a0 = D11;
-static const int pin_wr = D12;
-//static const int pin_cs = D10;
+#define pin_D0 9 // PB1
+#define pin_D1 8 // PB0
+#define pin_D2 7 // PD7
+#define pin_D3 6 // PD6
+#define pin_D4 5 // PD5
+#define pin_D5 4 // PD4
+#define pin_D6 3 // PD3
+#define pin_D7 2 // PD2
+#define pin_A0 11 // PB3
+#define pin_WR 12 // PB4
+#define pin_IC 10 // PB2  ~IC aka reset pin
 
-// /IC aka reset pin
-static const byte pin_ic = D10; // A0;
+#define pin_BUTTON A0 // PC0 will be used as a digital input
 
 uint16_t notetbl[] = {
   0x0157, 0x016b, 0x0181, 0x0198, 0x01b0, 0x01ca, 0x01e5, 0x0202, 0x0220,
@@ -77,26 +72,60 @@ uint16_t notetbl[] = {
 
 uint8_t notenum = 40;
 
+void assertWrite() {
+  //digitalWrite(pin_WR, 0);  // PB4
+  bitClear(PORTB, PB4);
+}
+
+void unassertWrite() {
+  //digitalWrite(pin_WR, 1);  // PB4
+  bitSet(PORTB, PB4);
+}
+
+void assertReset() {
+  //digitalWrite(pin_IC, LOW); // PB2
+  bitClear(PORTB, PB2);
+}
+
+void unassertReset() {
+  //digitalWrite(pin_IC, HIGH); // PB2
+  bitSet(PORTB, PB2);
+}
+
 void ym3812_write1(uint8_t addr, uint8_t data) {
   // write reg
-  digitalWrite(pin_a0, addr);  // set a0
-  //digitalWrite(pin_cs, 0);  // assert /CS
-
-  // our 8 bit bus is spread out across some random arduino DIO pins
-  digitalWrite(D2, (data >> 7 ) & 0x01);
-  digitalWrite(D3, (data >> 6 ) & 0x01);
-  digitalWrite(D4, (data >> 5 ) & 0x01);
-  digitalWrite(D5, (data >> 4 ) & 0x01);
-  digitalWrite(D6, (data >> 3 ) & 0x01);
-  digitalWrite(D7, (data >> 2 ) & 0x01);
-  digitalWrite(D8, (data >> 1 ) & 0x01);
-  digitalWrite(D9, (data >> 0 ) & 0x01);
+  //digitalWrite(pin_A0, addr);  // PB3
+  bitWrite(PORTB, PB3, addr);
   
-  digitalWrite(pin_wr, 0);  // assert /WR
+  // our 8 bit bus is spread out across some random arduino DIO pins
+//  digitalWrite(pin_D7, data & 0x80); // PD2
+  bitWrite(PORTD, PD2, data & 0x80);
+
+//  digitalWrite(pin_D6, data & 0x40); // PD3
+  bitWrite(PORTD, PD3, data & 0x40);
+
+//  digitalWrite(pin_D5, data & 0x20); // PD4
+  bitWrite(PORTD, PD4, data & 0x20);
+
+//  digitalWrite(pin_D4, data & 0x10); // PD5
+  bitWrite(PORTD, PD5, data & 0x10);
+
+//  digitalWrite(pin_D3, data & 0x08); // PD6
+  bitWrite(PORTD, PD6, data & 0x08);
+
+//  digitalWrite(pin_D2, data & 0x04); // PD7
+  bitWrite(PORTD, PD7, data & 0x04);
+
+//  digitalWrite(pin_D1, data & 0x02); // PB0
+  bitWrite(PORTB, PB0, data & 0x02);
+
+//  digitalWrite(pin_D0, data & 0x01); // PB1
+  bitWrite(PORTB, PB1, data & 0x01);
+
+  assertWrite();
   // 100ns
-  delayMicroseconds(0);  // FIXME
-  digitalWrite(pin_wr, 1);  // unassert /WR
-  //digitalWrite(pin_cs, 1);  // unassert /CS
+  delayMicroseconds(1);  // FIXME
+  unassertWrite();
 }
 
 void ym3812_write(uint8_t reg, uint8_t val) {
@@ -114,22 +143,22 @@ const uint8_t chan = 0;
 
 void setup() {
   // button
-  pinMode(A0, INPUT_PULLUP); // this analog line is used as a digital input
+  pinMode(pin_BUTTON, INPUT_PULLUP); // an analog line is used as a digital input
 
-  static const uint8_t output_pins[] = {
-    D2, D3, D4, D5, D6, D7, D8, D9,   // D0..D7
-    pin_a0, pin_wr, /*pin_cs,*/ pin_ic
+  const uint8_t output_pins[] = {
+    pin_D0, pin_D1, pin_D2, pin_D3, pin_D4, pin_D5, pin_D6, pin_D7,
+    pin_A0, pin_WR, pin_IC
   };
   for (uint8_t i = 0; i < sizeof(output_pins); i++) {
     pinMode(output_pins[i], OUTPUT);
   }
 
   // reset the YM3812
-  digitalWrite(pin_ic, LOW);
+  assertReset();
   delay(10);  // TODO: look up how long you need to hold reset
-  digitalWrite(pin_ic, HIGH);
+  unassertReset();
 
-  digitalWrite(pin_wr, 1);  // de-assert /WR
+  unassertWrite();
 
   delay(100);
 
@@ -153,6 +182,12 @@ void setup() {
 
   setupOLED();
   cycle_mode();
+
+  // setup ADC
+  ADCSRA = bit(ADEN) // Turn ADC on
+           | bit(ADPS0) | bit(ADPS1) | bit(ADPS2); // Prescaler of 128
+  ADMUX  = bit(REFS0) // AVCC
+           | ((A7 - 14) & 0x07); // Arduino Uno to ADC pin
 }
 
 struct mult_ratio {
@@ -206,7 +241,7 @@ void sort_ratios() {
 }
 
 void create_ratio_table() {
-  float r[] = { 0.5, 1, 2, 3, 4, 5,6, 7, 8, 9, 10, 12, 15 };
+  float r[] = { 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15 };
   float rat;
 
   // fill list of ratios with place holders
@@ -229,6 +264,13 @@ void create_ratio_table() {
   sort_ratios();
 }
 
+byte isButtonPushed() {
+  return !digitalRead(pin_BUTTON); // PC0
+//  return bit_is_clear(PINC, PC0);
+//  return !(PINC & (1<<PC0));
+
+}
+
 int old_raw_val = 0;
 void modal_knob( int raw_val) {
   // detect if the value has actually changed since we switched modes so that cycling the mode doesn't change things
@@ -236,64 +278,113 @@ void modal_knob( int raw_val) {
     return;
   old_raw_val = raw_val;
 
+  int dummy; // used to make sure we don't update things when we don't need to
+
   switch(modal_type) {
     case 0:
-      feedback = map(raw_val, 0, 1023, 0, 8);
-      ym3812_write(0xc0 + op1, (feedback << 1) );
-      fb_label[5] = '0' + feedback;
-      oledWriteString(&ssoled,0, 0,2, fb_label, FONT_STRETCHED, 0, 1);
+      dummy = map(raw_val, 0, 1023, 0, 8);
+      if( dummy != feedback) {
+        feedback = dummy;
+        ym3812_write(0xc0 + op1, (feedback << 1) );
+        fb_label[5] = '0' + feedback;
+        oledWriteString(&ssoled,0, 0,2, fb_label, FONT_STRETCHED, 0, 1);
+      }
       break;
     case 1: // waveform for op1
       // 0 = sine, 1 = halfsine, 2 = rectified sine, 3 = half cycle rectified sine
-      wave1 = map(raw_val, 0, 1023, 0, 4);
-      wave1 = wave1 & 0b00000011;
-      ym3812_write(0xe0 + op1, wave1);
-      oledWriteString(&ssoled,0, 0,2, waveforms[wave1], FONT_STRETCHED, 0, 1);
+      dummy = map(raw_val, 0, 1023, 0, 4) & 0b00000011;
+      if( dummy != wave1) {
+        wave1 = dummy;
+        ym3812_write(0xe0 + op1, wave1);
+        oledWriteString(&ssoled,0, 0,2, waveforms[wave1], FONT_STRETCHED, 0, 1);
+      }
       break;
     case 2: // waveform for op2
       // 0 = sine, 1 = halfsine, 2 = rectified sine, 3 = half cycle rectified sine
-      wave2 = map(raw_val, 0, 1023, 0, 4);
-      wave2 = wave2 & 0b00000011;
-      ym3812_write(0xe0 + op2, wave2);
-      oledWriteString(&ssoled,0, 0,2, waveforms[wave2], FONT_STRETCHED, 0, 1);
+      dummy = map(raw_val, 0, 1023, 0, 4) & 0b00000011;
+      if( dummy != wave2) {
+        wave2 = dummy;
+        ym3812_write(0xe0 + op2, wave2);
+        oledWriteString(&ssoled,0, 0,2, waveforms[wave2], FONT_STRETCHED, 0, 1);
+      }
       break;
   }
 }
 
-byte note = 20;
-byte modulation = 1;
-byte mult = 1;
-int knob0, knob1, knob2, knob3;
-byte mult2 = 1;
-int ratio;
-bool waiting_for_button_release = false;
-
-void loop() {
-  //demo_loop();
-  vco_loop();
+bool adc_conversion_working = false;
+byte adcChannel = A7;
+void setADCChannel(byte pin) {
+  adcChannel = pin;
+  ADMUX  = bit(REFS0) // AVCC
+    | ((pin - 14) & 0x07); // Arduino Uno to ADC pin
 }
 
-void vco_loop() {
-  knob0 = analogRead(A7);
-  knob1 = analogRead(A1);
-  knob2 = analogRead(A2);
-  knob3 = analogRead(A3);
+void startADC() {
+  bitSet(ADCSRA, ADSC);  // Start a conversion
+  adc_conversion_working = true;
+}
 
-  note = map(knob0, 0, 1023, 0, notenum);
-  ym3812_write(0xa0, notetbl[note] & 0x00ff);  // least significant byte of f-num
-  ym3812_write(0xb0, 0x20 | ((notetbl[note] >> 8) & 0x00FF) ) ;  // f-num, octave, key on
+byte adcReady() {
+  return bit_is_clear(ADCSRA, ADSC);
+}
 
-  modulation = map(knob1, 0, 1023, 0x1F, 0x0);
-  ym3812_write(0x40 + op1, modulation);
+void setNextADCChannel() {
+  if(adcChannel == A7)
+    adcChannel = A1;
+  else if(adcChannel == A1)
+    adcChannel = A2;
+  else if(adcChannel == A2)
+    adcChannel = A3;
+  else
+    adcChannel = A7;
+  setADCChannel(adcChannel);
+}
 
-  modal_knob(knob3);
+byte note = 20;
+byte modulation = 1;
+int ratio;
+bool waiting_for_button_release = false;
+int dummy;
 
-  ratio = map(knob2, 0, 1023, 0, 87);
-  if( ratio > 86) ratio = 86;
-  ym3812_write(0x20 + op1, 0x20 | ratios[ratio].op1); 
-  ym3812_write(0x20 + op2, 0x20 | ratios[ratio].op2); 
+void loop() {
+  if( !adc_conversion_working)
+    startADC();
 
-  if( !digitalRead(A0)) {
+  if( adcReady()) {
+    adc_conversion_working = false;
+    switch (adcChannel) {
+      case A7:
+        dummy = map(ADC, 0, 1023, 0, notenum);
+        if( dummy != note) {
+          note = dummy;
+          ym3812_write(0xa0, notetbl[note] & 0x00ff);  // least significant byte of f-num
+          ym3812_write(0xb0, 0x20 | ((notetbl[note] >> 8) & 0x00FF) ) ;  // f-num, octave, key on
+        }
+        break;
+      case A1:
+        dummy = map(ADC, 0, 1023, 0x1F, 0x0);
+        if( dummy != modulation) {
+          modulation = dummy;
+          ym3812_write(0x40 + op1, modulation);
+        }
+        break;
+      case A2:
+          dummy = map(ADC, 0, 1023, 0, 87);
+          if( dummy > 86) dummy = 86;
+          if( dummy != ratio) {
+            ratio = dummy;
+            ym3812_write(0x20 + op1, 0x20 | ratios[ratio].op1);
+            ym3812_write(0x20 + op2, 0x20 | ratios[ratio].op2);
+          }
+        break;
+      case A3:
+        modal_knob(ADC);
+        break;
+    }
+    setNextADCChannel();
+  }
+
+  if( isButtonPushed()) {
     waiting_for_button_release = true;
   } else {
     // A0 is low
